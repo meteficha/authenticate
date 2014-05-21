@@ -18,6 +18,7 @@ library
                    , transformers                  >= 0.1      && < 0.5
                    , bytestring                    >= 0.10
                    , crypto-pubkey-types           >= 0.1      && < 0.5
+                   , crypto-random                 == 0.0.*
                    , RSA                           == 2.0.*
                    , time
                    , data-default
