@@ -440,7 +440,7 @@ addScope scope req | BS.null scope = req
 
 
 token, tokenSecret :: Credential -> BS.ByteString
-token = fromMaybe "" . lookup "oauth_token" . unCredential
+token       = fromMaybe "" . lookup "oauth_token"        . unCredential
 tokenSecret = fromMaybe "" . lookup "oauth_token_secret" . unCredential
 
 
@@ -449,7 +449,7 @@ addMaybeProxy p req = req { proxy = p }
 
 
 insertMap :: Eq a => a -> b -> [(a,b)] -> [(a,b)]
-insertMap key val = ((key,val):) . filter ((/=key).fst)
+insertMap key val = ((key,val):) . deleteMap key
 
 deleteMap :: Eq a => a -> [(a,b)] -> [(a,b)]
 deleteMap k = filter ((/=k).fst)
@@ -467,7 +467,7 @@ toBS' gp = liftIO $ do
     ref <- I.newIORef BS.empty
     gp (go ref)
     I.readIORef ref
-  where
+   where
     go ref popper =
         loop id
       where
