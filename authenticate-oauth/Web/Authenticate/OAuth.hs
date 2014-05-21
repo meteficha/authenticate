@@ -28,7 +28,7 @@ import           Blaze.ByteString.Builder     (toByteString)
 import           Control.Exception
 import           Control.Monad
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
-import           Crypto.Types.PubKey.RSA      (PrivateKey (..), PublicKey (..))
+import           Crypto.Types.PubKey.RSA      (PrivateKey (..))
 import           Data.ByteString.Base64
 import qualified Data.ByteString.Char8        as BS
 import qualified Data.ByteString.Lazy.Char8   as BSL
