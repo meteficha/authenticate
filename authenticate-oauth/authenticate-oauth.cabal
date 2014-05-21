@@ -24,7 +24,7 @@ library
                    , data-default
                    , base64-bytestring             >= 0.1      && < 1.1
                    , SHA                           >= 1.4      && < 1.7
-                   , random
+                   , unordered-containers          == 0.2.*
                    , http-types                    >= 0.6
                    , blaze-builder
                    , blaze-builder-conduit         >= 0.4

@@ -37,9 +37,11 @@ import qualified Data.ByteString.Lazy.Char8   as BSL
 import           Data.Char
 import           Data.Default
 import           Data.Digest.Pure.SHA
+import qualified Data.HashSet                 as HS
 import qualified Data.IORef                   as I
 import           Data.List                    (sort)
 import           Data.Maybe
+import           Data.Monoid                  ((<>))
 import           Data.Time
 import           Data.Tuple                   (swap)
 import           Network.HTTP.Client
@@ -121,6 +123,11 @@ data SignMethod = PLAINTEXT
                 | RSASHA1 PrivateKey
                   deriving (Show, Eq, Read, Data, Typeable)
 
+showSigMtd :: SignMethod -> BS.ByteString
+showSigMtd PLAINTEXT = "PLAINTEXT"
+showSigMtd HMACSHA1  = "HMAC-SHA1"
+showSigMtd (RSASHA1 _) = "RSA-SHA1"
+
 
 data OAuthException = OAuthException String
                       deriving (Show, Eq, Data, Typeable)
@@ -133,7 +140,7 @@ instance Exception OAuthException
 
 
 -- | Data type for redential.
-data Credential = Credential { unCredential :: [(BS.ByteString, BS.ByteString)] }
+data Credential = Credential { unCredential :: SimpleQuery }
                   deriving (Show, Eq, Ord, Read, Data, Typeable)
 
 
@@ -158,7 +165,7 @@ insert k v = Credential . insertMap k v . unCredential
 
 
 -- | Convenient method for inserting multiple parameters into credential.
-inserts :: [(BS.ByteString, BS.ByteString)] -> Credential -> Credential
+inserts :: SimpleQuery -> Credential -> Credential
 inserts = flip $ foldr (uncurry insert)
 
 
@@ -195,7 +202,7 @@ signOAuth oa genVar crd req = do
   where
     prefix = case oauthRealm oa of
       Nothing -> "OAuth "
-      Just v  -> "OAuth realm=\"" `BS.append` v `BS.append` "\","
+      Just v  -> BS.concat ["OAuth realm=\"", v, "\","]
 
 
 -- | Generate OAuth signature.  Used by 'signOAuth'.
@@ -330,19 +337,7 @@ getAccessToken' hook oa genVar cr manager = do
     then do
       let dic = parseSimpleQuery . BSL.toStrict . responseBody $ rsp
       return $ Credential dic
-    else liftIO . throwIO . OAuthException $ "Gaining OAuth Token Credential Failed: " ++ BSL.unpack (responseBody rsp)
-
-
-baseTime :: UTCTime
-baseTime = UTCTime day 0
-  where
-    day = ModifiedJulianDay 40587
-
-
-showSigMtd :: SignMethod -> BS.ByteString
-showSigMtd PLAINTEXT = "PLAINTEXT"
-showSigMtd HMACSHA1  = "HMAC-SHA1"
-showSigMtd (RSASHA1 _) = "RSA-SHA1"
+    else liftIO . throwIO . OAuthException $ "Gaining OAuth Token Credential Failed: " ++ BSL.unpack (BSL.take 100 $ responseBody rsp)
 
 
 addNonce :: (MonadIO m, R.CPRG gen) => I.IORef gen -> Credential -> m Credential
@@ -359,6 +354,8 @@ addTimeStamp :: MonadIO m => Credential -> m Credential
 addTimeStamp cred = do
   stamp <- (floor . (`diffUTCTime` baseTime)) `liftM` liftIO getCurrentTime
   return $ insert "oauth_timestamp" (BS.pack $ show (stamp :: Integer)) cred
+    where
+      baseTime = UTCTime (ModifiedJulianDay 40587) 0
 
 
 injectOAuthToCred :: OAuth -> Credential -> Credential
@@ -371,11 +368,39 @@ injectOAuthToCred oa cred =
 
 addAuthHeader :: BS.ByteString -> Credential -> Request -> Request
 addAuthHeader prefix (Credential cred) req =
-  req { requestHeaders = insertMap "Authorization" (renderAuthHeader prefix cred) $ requestHeaders req }
+  req { requestHeaders = insertMap "Authorization" (prefix <> renderAuthHeader cred) $ requestHeaders req }
 
 
-renderAuthHeader :: BS.ByteString -> [(BS.ByteString, BS.ByteString)] -> BS.ByteString
-renderAuthHeader prefix = (prefix `BS.append`). BS.intercalate "," . map (\(a,b) -> BS.concat [paramEncode a, "=\"",  paramEncode b, "\""]) . filter ((`elem` ["oauth_token", "oauth_verifier", "oauth_consumer_key", "oauth_signature_method", "oauth_timestamp", "oauth_nonce", "oauth_version", "oauth_callback", "oauth_signature"]) . fst)
+renderAuthHeader :: SimpleQuery -> BS.ByteString
+renderAuthHeader =
+  BS.intercalate "," .
+  map (\(a,b) -> BS.concat [paramEncode a, "=\"",  paramEncode b, "\""]) .
+  filterOAuthKeys IncludeSig
+
+
+-- | Filter out the keys that are not used in the OAuth
+-- authorization.
+filterOAuthKeys :: IncludeOAuthSignature -> SimpleQuery -> SimpleQuery
+filterOAuthKeys = \include -> let c = check include in filter (c . fst)
+  where
+    authKeys =
+      HS.fromList
+        [ "oauth_callback"
+        , "oauth_consumer_key"
+        , "oauth_nonce"
+        , "oauth_signature_method"
+        , "oauth_timestamp"
+        , "oauth_token"
+        , "oauth_verifier"
+        , "oauth_version" ]
+    authKeysWithSignature = HS.insert "oauth_signature" authKeys
+    check IncludeSig = flip HS.member authKeysWithSignature
+    check NoSig      = flip HS.member authKeys
+
+
+-- | Whether @oauth-signature@ should be included or discarded
+-- (cf. 'filterOAuthKeys').
+data IncludeOAuthSignature = IncludeSig | NoSig
 
 
 getBaseString :: MonadIO m => Credential -> Request -> m BSL.ByteString
@@ -390,10 +415,7 @@ getBaseString tok req = do
   bsBodyQ <- if isBodyFormEncoded $ requestHeaders req
                   then liftM parseSimpleQuery $ toBS (requestBody req)
                   else return []
-  let bsAuthParams = filter ((`elem` authKeys) . fst) $ unCredential tok
-      authKeys = [ "oauth_consumer_key", "oauth_token", "oauth_version"
-                 , "oauth_signature_method", "oauth_timestamp", "oauth_nonce"
-                 , "oauth_verifier", "oauth_version", "oauth_callback" ]
+  let bsAuthParams = filterOAuthKeys NoSig $ unCredential tok
       allParams = bsQuery ++ bsBodyQ ++ bsAuthParams
       bsParams =
         BS.intercalate "&" . sort $
