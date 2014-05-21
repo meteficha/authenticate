@@ -201,11 +201,11 @@ genSign oa tok req =
     HMACSHA1 -> do
       text <- getBaseString tok req
       let key  = BS.intercalate "&" $ map paramEncode [oauthConsumerSecret oa, tokenSecret tok]
-      return $ encode $ toStrict $ bytestringDigest $ hmacSha1 (fromStrict key) text
+      return $ encode $ BSL.toStrict $ bytestringDigest $ hmacSha1 (BSL.fromStrict key) text
     PLAINTEXT ->
       return $ BS.intercalate "&" $ map paramEncode [oauthConsumerSecret oa, tokenSecret tok]
     RSASHA1 pr ->
-      liftM (encode . toStrict . rsassa_pkcs1_v1_5_sign hashSHA1 pr) (getBaseString tok req)
+      liftM (encode . BSL.toStrict . rsassa_pkcs1_v1_5_sign hashSHA1 pr) (getBaseString tok req)
 
 
 ----------------------------------------------------------------------
@@ -250,7 +250,7 @@ getTemporaryCredential' hook oa manager = do
   rsp <- liftIO $ httpLbs req' manager
   if responseStatus rsp == status200
     then do
-      let dic = parseSimpleQuery . toStrict . responseBody $ rsp
+      let dic = parseSimpleQuery . BSL.toStrict . responseBody $ rsp
       return $ Credential dic
     else liftIO . throwIO . OAuthException $ "Gaining OAuth Temporary Credential Failed: " ++ BSL.unpack (responseBody rsp)
 
@@ -317,7 +317,7 @@ getAccessToken' hook oa cr manager = do
   rsp <- liftIO $ flip httpLbs manager =<< signOAuth oa (if oauthVersion oa == OAuth10 then delete "oauth_verifier" cr else cr) req
   if responseStatus rsp == status200
     then do
-      let dic = parseSimpleQuery . toStrict . responseBody $ rsp
+      let dic = parseSimpleQuery . BSL.toStrict . responseBody $ rsp
       return $ Credential dic
     else liftIO . throwIO . OAuthException $ "Gaining OAuth Token Credential Failed: " ++ BSL.unpack (responseBody rsp)
 
@@ -375,7 +375,7 @@ getBaseString tok req = do
                    $ map (\(a,b) -> (paramEncode a,paramEncode b)) allParams
   -- parameter encoding method in OAuth is slight different from ordinary one.
   -- So this is OK.
-  return $ BSL.intercalate "&" $ map (fromStrict.paramEncode) [bsMtd, bsURI, bsParams]
+  return $ BSL.intercalate "&" $ map (BSL.fromStrict . paramEncode) [bsMtd, bsURI, bsParams]
 
 
 ----------------------------------------------------------------------
@@ -412,15 +412,8 @@ deleteMap :: Eq a => a -> [(a,b)] -> [(a,b)]
 deleteMap k = filter ((/=k).fst)
 
 
-toStrict :: BSL.ByteString -> BS.ByteString
-toStrict = BS.concat . BSL.toChunks
-
-fromStrict :: BS.ByteString -> BSL.ByteString
-fromStrict = BSL.fromChunks . return
-
-
 toBS :: MonadIO m => RequestBody -> m BS.ByteString
-toBS (RequestBodyLBS l) = return $ toStrict l
+toBS (RequestBodyLBS l) = return $ BSL.toStrict l
 toBS (RequestBodyBS s) = return s
 toBS (RequestBodyBuilder _ b) = return $ toByteString b
 toBS (RequestBodyStream _ givesPopper) = toBS' givesPopper
