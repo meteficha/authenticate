@@ -19,8 +19,6 @@ module Web.Authenticate.OAuth
       -- ** Finishing authentication
       getAccessToken,
       getAccessTokenProxy,
-      getTokenCredential,
-      getTokenCredentialProxy,
       getAccessToken',
       -- * Utility Methods
       paramEncode, addScope, addMaybeProxy
@@ -288,7 +286,7 @@ authorizeUrl' f oa cr = oauthAuthorizeUri oa ++ BS.unpack (renderSimpleQuery Tru
 
 
 -- | Get Access token.
-getAccessToken, getTokenCredential
+getAccessToken
                :: MonadIO m
                => OAuth         -- ^ OAuth Application
                -> Credential    -- ^ Temporary Credential (with oauth_verifier if >= 1.0a)
@@ -298,7 +296,7 @@ getAccessToken = getAccessToken' id
 
 
 -- | Get Access token via the proxy.
-getAccessTokenProxy, getTokenCredentialProxy
+getAccessTokenProxy
                :: MonadIO m
                => Maybe Proxy   -- ^ Proxy
                -> OAuth         -- ^ OAuth Application
@@ -322,9 +320,6 @@ getAccessToken' hook oa cr manager = do
       let dic = parseSimpleQuery . toStrict . responseBody $ rsp
       return $ Credential dic
     else liftIO . throwIO . OAuthException $ "Gaining OAuth Token Credential Failed: " ++ BSL.unpack (responseBody rsp)
-
-getTokenCredential = getAccessToken
-getTokenCredentialProxy = getAccessTokenProxy
 
 
 baseTime :: UTCTime
