@@ -40,7 +40,7 @@ import           Data.Digest.Pure.SHA
 import qualified Data.HashSet                 as HS
 import qualified Data.IORef                   as I
 import           Data.List                    (sort)
-import           Data.Maybe
+import           Data.Maybe                   (fromMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Time
 import           Data.Tuple                   (swap)
@@ -259,7 +259,7 @@ getTemporaryCredential' :: (MonadIO m, R.CPRG gen)
                         -> Manager
                         -> m Credential    -- ^ Temporary Credential (Request Token & Secret).
 getTemporaryCredential' hook oa genVar manager = do
-  let req = fromJust $ parseUrl $ oauthRequestUri oa
+  let Just req = parseUrl $ oauthRequestUri oa
       crd = maybe id (insert "oauth_callback") (oauthCallback oa) $ emptyCredential
   req' <- signOAuth oa genVar crd $ hook (req { method = "POST" })
   rsp <- liftIO $ httpLbs req' manager
@@ -331,7 +331,7 @@ getAccessToken' :: (MonadIO m, R.CPRG gen)
                 -> Manager
                 -> m Credential     -- ^ Token Credential (Access Token & Secret)
 getAccessToken' hook oa genVar cr manager = do
-  let req = hook (fromJust $ parseUrl $ oauthAccessTokenUri oa) { method = "POST" }
+  let Just req = fmap (post . hook) (parseUrl $ oauthAccessTokenUri oa) where post r = r { method = "POST" }
   rsp <- liftIO $ flip httpLbs manager =<< signOAuth oa genVar (if oauthVersion oa == OAuth10 then delete "oauth_verifier" cr else cr) req
   if responseStatus rsp == status200
     then do
