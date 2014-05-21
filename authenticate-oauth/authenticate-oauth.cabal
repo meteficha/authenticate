@@ -27,7 +27,7 @@ library
                    , http-types                    >= 0.6
                    , blaze-builder
                    , blaze-builder-conduit         >= 0.4
-    exposed-modules: Web.Authenticate.OAuth, Web.Authenticate.OAuth.IO
+    exposed-modules: Web.Authenticate.OAuth
     ghc-options:     -Wall
 
 source-repository head
