@@ -390,10 +390,14 @@ getBaseString tok req = do
   bsBodyQ <- if isBodyFormEncoded $ requestHeaders req
                   then liftM parseSimpleQuery $ toBS (requestBody req)
                   else return []
-  let bsAuthParams = filter ((`elem`["oauth_consumer_key","oauth_token", "oauth_version","oauth_signature_method","oauth_timestamp", "oauth_nonce", "oauth_verifier", "oauth_version","oauth_callback"]).fst) $ unCredential tok
-      allParams = bsQuery++bsBodyQ++bsAuthParams
-      bsParams = BS.intercalate "&" $ map (\(a,b)->BS.concat[a,"=",b]) $ sort
-                   $ map (\(a,b) -> (paramEncode a,paramEncode b)) allParams
+  let bsAuthParams = filter ((`elem` authKeys) . fst) $ unCredential tok
+      authKeys = [ "oauth_consumer_key", "oauth_token", "oauth_version"
+                 , "oauth_signature_method", "oauth_timestamp", "oauth_nonce"
+                 , "oauth_verifier", "oauth_version", "oauth_callback" ]
+      allParams = bsQuery ++ bsBodyQ ++ bsAuthParams
+      bsParams =
+        BS.intercalate "&" . sort $
+        [BS.concat [paramEncode a, "=", paramEncode b] | (a, b) <- allParams]
   -- parameter encoding method in OAuth is slight different from ordinary one.
   -- So this is OK.
   return $ BSL.intercalate "&" $ map (BSL.fromStrict . paramEncode) [bsMtd, bsURI, bsParams]
