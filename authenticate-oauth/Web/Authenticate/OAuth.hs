@@ -43,10 +43,8 @@ import           Data.Maybe
 import           Data.Time
 import           Data.Tuple                   (swap)
 import           Network.HTTP.Client
-import           Network.HTTP.Types           (SimpleQuery, parseSimpleQuery)
-import           Network.HTTP.Types           (Header)
-import           Network.HTTP.Types           (renderSimpleQuery, status200)
-import           Numeric
+import           Network.HTTP.Types           ( Header, SimpleQuery, parseSimpleQuery
+                                              , renderSimpleQuery, status200, urlEncode )
 #if MIN_VERSION_base(4,7,0)
 import Data.Data hiding (Proxy (..))
 #else
@@ -404,14 +402,10 @@ getBaseString tok req = do
 ----------------------------------------------------------------------
 -- Utilities
 
+
 -- | Encode a string using the percent encoding method for OAuth.
 paramEncode :: BS.ByteString -> BS.ByteString
-paramEncode = BS.concatMap escape
-  where
-    escape c | isAscii c && (isAlpha c || isDigit c || c `elem` "-._~") = BS.singleton c
-             | otherwise = let num = map toUpper $ showHex (ord c) ""
-                               oct = '%' : replicate (2 - length num) '0' ++ num
-                           in BS.pack oct
+paramEncode = urlEncode True
 
 
 addScope :: BS.ByteString -> Request -> Request
