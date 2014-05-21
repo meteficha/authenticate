@@ -2,7 +2,7 @@ name:            authenticate-oauth
 version:         1.5
 license:         BSD3
 license-file:    LICENSE
-author:          Hiromi Ishii
+author:          Hiromi Ishii, Felipe Lessa <felipe.lessa@prowdsponsor.com>
 maintainer:      Hiromi Ishii
 synopsis:        Library to authenticate with OAuth for Haskell web applications.
 description:     OAuth authentication, e.g. Twitter.
