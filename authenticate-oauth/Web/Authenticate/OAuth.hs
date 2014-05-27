@@ -28,10 +28,9 @@ import           Blaze.ByteString.Builder     (toByteString)
 import           Control.Exception
 import           Control.Monad
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
-import qualified Crypto.Random                as R
+import qualified Crypto.Nonce                 as Nonce
 import           Crypto.Types.PubKey.RSA      (PrivateKey (..))
 import           Data.ByteString.Base64       as B64
-import           Data.ByteString.Base64.URL   as B64URL
 import qualified Data.ByteString.Char8        as BS
 import qualified Data.ByteString.Lazy.Char8   as BSL
 import           Data.Char
@@ -43,7 +42,6 @@ import           Data.List                    (sort)
 import           Data.Maybe                   (fromMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Time
-import           Data.Tuple                   (swap)
 import           Network.HTTP.Client
 import           Network.HTTP.Types           ( Header, SimpleQuery, parseSimpleQuery
                                               , renderSimpleQuery, status200, urlEncode )
@@ -188,14 +186,14 @@ injectVerifier = insert "oauth_verifier"
 --
 --  For the random number generator, we recommend using the
 --  @cprng-aes@ package.
-signOAuth :: (MonadIO m, R.CPRG gen)
+signOAuth :: MonadIO m
           => OAuth              -- ^ OAuth Application
-          -> I.IORef gen        -- ^ CPRNG (cf. @cprng-aes@)
+          -> Nonce.Generator    -- ^ Nonce generator.
           -> Credential         -- ^ Credential
           -> Request            -- ^ Original Request
           -> m Request          -- ^ Signed OAuth Request
-signOAuth oa genVar crd req = do
-  crd' <- addTimeStamp =<< addNonce genVar crd
+signOAuth oa nonceGen crd req = do
+  crd' <- addTimeStamp =<< addNonce nonceGen crd
   let tok = injectOAuthToCred oa crd'
   sign <- genSign oa tok req
   return $ addAuthHeader prefix (insert "oauth_signature" sign tok) req
@@ -224,44 +222,44 @@ genSign oa tok req =
 
 
 -- | Get temporary credential for requesting acces token.
-getTemporaryCredential :: (MonadIO m, R.CPRG gen)
-                       => OAuth         -- ^ OAuth Application
-                       -> I.IORef gen   -- ^ CPRNG (cf. @cprng-aes@)
+getTemporaryCredential :: MonadIO m
+                       => OAuth           -- ^ OAuth Application
+                       -> Nonce.Generator -- ^ Nonce generator.
                        -> Manager
                        -> m Credential -- ^ Temporary Credential (Request Token & Secret).
 getTemporaryCredential = getTemporaryCredential' id
 
 
 -- | Get temporary credential for requesting access token with Scope parameter.
-getTemporaryCredentialWithScope :: (MonadIO m, R.CPRG gen)
-                                => BS.ByteString -- ^ Scope parameter string
-                                -> OAuth         -- ^ OAuth Application
-                                -> I.IORef gen   -- ^ CPRNG (cf. @cprng-aes@)
+getTemporaryCredentialWithScope :: MonadIO m
+                                => BS.ByteString   -- ^ Scope parameter string
+                                -> OAuth           -- ^ OAuth Application
+                                -> Nonce.Generator -- ^ Nonce generator.
                                 -> Manager
-                                -> m Credential -- ^ Temporay Credential (Request Token & Secret).
+                                -> m Credential    -- ^ Temporay Credential (Request Token & Secret).
 getTemporaryCredentialWithScope = getTemporaryCredential' . addScope
 
 
 -- | Get temporary credential for requesting access token via the proxy.
-getTemporaryCredentialProxy :: (MonadIO m, R.CPRG gen)
-                            => Maybe Proxy   -- ^ Proxy
-                            -> OAuth         -- ^ OAuth Application
-                            -> I.IORef gen   -- ^ CPRNG (cf. @cprng-aes@)
+getTemporaryCredentialProxy :: MonadIO m
+                            => Maybe Proxy     -- ^ Proxy
+                            -> OAuth           -- ^ OAuth Application
+                            -> Nonce.Generator -- ^ Nonce generator.
                             -> Manager
-                            -> m Credential -- ^ Temporary Credential (Request Token & Secret).
+                            -> m Credential    -- ^ Temporary Credential (Request Token & Secret).
 getTemporaryCredentialProxy = getTemporaryCredential' . addMaybeProxy
 
 
-getTemporaryCredential' :: (MonadIO m, R.CPRG gen)
+getTemporaryCredential' :: MonadIO m
                         => (Request -> Request)       -- ^ Request Hook
                         -> OAuth                      -- ^ OAuth Application
-                        -> I.IORef gen                -- ^ CPRNG (cf. @cprng-aes@)
+                        -> Nonce.Generator            -- ^ Nonce generator.
                         -> Manager
                         -> m Credential    -- ^ Temporary Credential (Request Token & Secret).
-getTemporaryCredential' hook oa genVar manager = do
+getTemporaryCredential' hook oa nonceGen manager = do
   let Just req = parseUrl $ oauthRequestUri oa
       crd = maybe id (insert "oauth_callback") (oauthCallback oa) $ emptyCredential
-  req' <- signOAuth oa genVar crd $ hook (req { method = "POST" })
+  req' <- signOAuth oa nonceGen crd $ hook (req { method = "POST" })
   rsp <- liftIO $ httpLbs req' manager
   if responseStatus rsp == status200
     then do
@@ -302,37 +300,37 @@ authorizeUrl' f oa cr = oauthAuthorizeUri oa ++ BS.unpack (renderSimpleQuery Tru
 
 -- | Get Access token.
 getAccessToken
-               :: (MonadIO m, R.CPRG gen)
-               => OAuth         -- ^ OAuth Application
-               -> I.IORef gen   -- ^ CPRNG (cf. @cprng-aes@)
-               -> Credential    -- ^ Temporary Credential (with oauth_verifier if >= 1.0a)
+               :: MonadIO m
+               => OAuth           -- ^ OAuth Application
+               -> Nonce.Generator -- ^ Nonce generator.
+               -> Credential      -- ^ Temporary Credential (with oauth_verifier if >= 1.0a)
                -> Manager
-               -> m Credential -- ^ Token Credential (Access Token & Secret)
+               -> m Credential    -- ^ Token Credential (Access Token & Secret)
 getAccessToken = getAccessToken' id
 
 
 -- | Get Access token via the proxy.
 getAccessTokenProxy
-               :: (MonadIO m, R.CPRG gen)
-               => Maybe Proxy   -- ^ Proxy
-               -> OAuth         -- ^ OAuth Application
-               -> I.IORef gen   -- ^ CPRNG (cf. @cprng-aes@)
-               -> Credential    -- ^ Temporary Credential (with oauth_verifier if >= 1.0a)
+               :: MonadIO m
+               => Maybe Proxy     -- ^ Proxy
+               -> OAuth           -- ^ OAuth Application
+               -> Nonce.Generator -- ^ Nonce generator.
+               -> Credential      -- ^ Temporary Credential (with oauth_verifier if >= 1.0a)
                -> Manager
-               -> m Credential -- ^ Token Credential (Access Token & Secret)
+               -> m Credential    -- ^ Token Credential (Access Token & Secret)
 getAccessTokenProxy = getAccessToken' . addMaybeProxy
 
 
-getAccessToken' :: (MonadIO m, R.CPRG gen)
+getAccessToken' :: MonadIO m
                 => (Request -> Request)       -- ^ Request Hook
                 -> OAuth                      -- ^ OAuth Application
-                -> I.IORef gen                -- ^ CPRNG (cf. @cprng-aes@)
+                -> Nonce.Generator            -- ^ Nonce generator.
                 -> Credential                 -- ^ Temporary Credential (with oauth_verifier if >= 1.0a)
                 -> Manager
                 -> m Credential     -- ^ Token Credential (Access Token & Secret)
-getAccessToken' hook oa genVar cr manager = do
+getAccessToken' hook oa nonceGen cr manager = do
   let Just req = fmap (post . hook) (parseUrl $ oauthAccessTokenUri oa) where post r = r { method = "POST" }
-  rsp <- liftIO $ flip httpLbs manager =<< signOAuth oa genVar (if oauthVersion oa == OAuth10 then delete "oauth_verifier" cr else cr) req
+  rsp <- liftIO $ flip httpLbs manager =<< signOAuth oa nonceGen (if oauthVersion oa == OAuth10 then delete "oauth_verifier" cr else cr) req
   if responseStatus rsp == status200
     then do
       let dic = parseSimpleQuery . BSL.toStrict . responseBody $ rsp
@@ -340,13 +338,9 @@ getAccessToken' hook oa genVar cr manager = do
     else liftIO . throwIO . OAuthException $ "Gaining OAuth Token Credential Failed: " ++ BSL.unpack (BSL.take 100 $ responseBody rsp)
 
 
-addNonce :: (MonadIO m, R.CPRG gen) => I.IORef gen -> Credential -> m Credential
-addNonce genVar cred = do
-  -- We want at least 128 bits of entropy.  Since both 16 and 18
-  -- bytes of input will generate 24 bytes of base64url output,
-  -- we use 144 bits.
-  randomBytes <- liftIO $ I.atomicModifyIORef genVar $ swap . R.cprgGenerate 18
-  let !nonce = B64URL.encode randomBytes
+addNonce :: MonadIO m => Nonce.Generator -> Credential -> m Credential
+addNonce nonceGen cred = do
+  nonce <- Nonce.nonce128url nonceGen
   return $ insert "oauth_nonce" nonce cred
 
 

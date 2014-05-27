@@ -18,7 +18,6 @@ library
                    , transformers                  >= 0.1      && < 0.5
                    , bytestring                    >= 0.10
                    , crypto-pubkey-types           >= 0.1      && < 0.5
-                   , crypto-random                 == 0.0.*
                    , RSA                           == 2.0.*
                    , time
                    , data-default
@@ -28,6 +27,7 @@ library
                    , http-types                    >= 0.6
                    , blaze-builder
                    , blaze-builder-conduit         >= 0.4
+                   , nonce                         == 1.0.*
     exposed-modules: Web.Authenticate.OAuth
     ghc-options:     -Wall
 
